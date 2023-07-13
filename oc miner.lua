@@ -158,11 +158,12 @@ step = function(side, ignore) -- function of moving by 1 block
     if not result and obstacle ~= "air" and robot.detect(side) then -- if block is indestructible/unbreakable
         --not the best thing, 
         --if its down, then just set the border to it
+        
         if side == 0 then
-
+            border = Y --new boundary
         else
             home(true) -- start ending function
-            report("insurmountable obstacle", true) -- send message
+            report("insurmountable obstacle: "..obstacle, true) -- send message
         end
     else
         while robot.swing(side) do
@@ -212,18 +213,22 @@ smart_turn = function(side) -- turn in a certain direction
 end
 
 local moveDirFuncs = {
-    function(newY) while Y ~= newY do if Y < newY then step(1) elseif Y > newY then step(0) end end end,
-    function(newX) if X < newX then smart_turn(3) elseif X > newX then smart_turn(1) end while X ~= newX do step(3) end end,
-    function(newZ) if Z < newZ then smart_turn(0) elseif Z > newZ then smart_turn(2) end while Z ~= newZ do step(3) end end
+    function(newY) local succ = true while succ and Y ~= newY do if Y < newY then succ = step(1) elseif Y > newY then succ = step(0) end end return succ end,
+    function(newX) local succ = true if X < newX then smart_turn(3) elseif X > newX then smart_turn(1) end while succ and X ~= newX do succ = step(3) end return succ end,
+    function(newZ) local succ = true if Z < newZ then smart_turn(0) elseif Z > newZ then smart_turn(2) end while succ and Z ~= newZ do succ = step(3) end return succ end
 }
 moveTo = function(x, y, z, order) -- move to exact coordinates
     if border and y < border then
         y = border
     end
     local validOrder = order and #order == 3
+    local moved
     for i=1,3 do
         local funcIndex = validOrder and order[i] or i
-        moveDirFuncs[funcIndex]( (funcIndex == 1 and y) or (funcIndex == 2 and x) or (funcIndex == 3 and z) )
+        moved = moveDirFuncs[funcIndex]( (funcIndex == 1 and y) or (funcIndex == 2 and x) or (funcIndex == 3 and z) )
+        if not moved then
+            --something
+        end
     end
 end
 

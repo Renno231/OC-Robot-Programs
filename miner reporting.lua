@@ -42,7 +42,7 @@ while running do
     if args[1] == "modem_message" then
         local minerID, msg = args[3], args[6]
         --print(table.unpack(args))
-        if not miners[minerID] then
+        if not miners[minerID] or #miners[minerID] > 100 then
             miners[minerID] = {}
         end
         table.insert(miners[minerID], args[6])
