@@ -59,7 +59,7 @@ end
 
 local reportStr = ""
 report = function(message, stop) -- status report
-    message = message .. "|" .. X .. " " .. Y .. " " .. Z .. "|\n" .. "\nenergy level: " .. math.floor(energy_level() * 100) .. "%" -- add coordinates and energy level to message
+    message = message .. " |" .. X .. ", " .. Y .. ", " .. Z .. "| energy level: " .. math.floor(energy_level() * 100) .. "%" -- add coordinates and energy level to message
     if modem then -- "if modem installed"
     if not penpal then
         modem.broadcast(port, message) -- send message via modem
@@ -115,7 +115,7 @@ check = function(forcibly) -- tool and battery check, points remove
                     (time.hour > 4 and time.hour < 17)
              then -- check current time
                 while not geolyzer.canSeeSky() do -- until can't see sky
-                    step(1, true) -- move up without check
+                    moveTo(X, Y+1, Z, nil, true) -- move up without check
                 end
                 report("recharging in the sun")
                 sorter(true)
@@ -161,15 +161,18 @@ step = function(side, ignore) -- function of moving by 1 block
         
         if side == 0 then
             border = Y --new boundary
-        else
-            home(true) -- start ending function
-            report("insurmountable obstacle: "..obstacle, true) -- send message
+            --return false
+        --else
+            --home(true) -- start ending function
+            --report("insurmountable obstacle: "..obstacle, true) -- send message
         end
+        return false
     else
         while robot.swing(side) do
         end -- mine while can
     end
-    if robot.move(side) then -- if robot moves, change coordinates
+    local hasMoved = robot.move(side) 
+    if hasMoved then -- if robot moves, change coordinates
         steps = steps + 1 -- debug
         if steps%10 == 0 then report("moved "..tostring(steps).." steps") end
         if side == 0 then
@@ -191,6 +194,7 @@ step = function(side, ignore) -- function of moving by 1 block
     if not ignore then
         check()
     end
+    return hasMoved
 end
 
 turn = function(side) -- turn
@@ -217,19 +221,79 @@ local moveDirFuncs = {
     function(newX) local succ = true if X < newX then smart_turn(3) elseif X > newX then smart_turn(1) end while succ and X ~= newX do succ = step(3) end return succ end,
     function(newZ) local succ = true if Z < newZ then smart_turn(0) elseif Z > newZ then smart_turn(2) end while succ and Z ~= newZ do succ = step(3) end return succ end
 }
-moveTo = function(x, y, z, order) -- move to exact coordinates
+moveTo = function(x, y, z, order, disableAutocorrect) -- move to exact coordinates
     if border and y < border then
         y = border
     end
     local validOrder = order and #order == 3
-    local moved
+    local dirsMoved = {}
+    local moved, funcIndex
     for i=1,3 do
-        local funcIndex = validOrder and order[i] or i
-        moved = moveDirFuncs[funcIndex]( (funcIndex == 1 and y) or (funcIndex == 2 and x) or (funcIndex == 3 and z) )
-        if not moved then
-            --something
+        funcIndex = validOrder and order[i] or i
+        moved = moveDirFuncs[funcIndex]( (funcIndex == 1 and y) or (funcIndex == 2 and x) or (funcIndex == 3 and z))
+        if moved then
+            table.insert(dirsMoved, funcIndex)
+        else
+            break    
         end
     end
+    local tdirsMoved = #dirsMoved --total directions moved
+    if disableAutocorrect~=true and not moved and tdirsMoved < 3 then --if movement failed, try again, funcIndex is the direction it failed on
+        local original_ignore_check, ignore_check = ignore_check, true
+        if funcIndex == 1 then
+            --failed to move vertically in the desired direction, if up could try down, if down could try up
+            --if can't do up or down, try side to side on X and if that doesn't work, try side to side on Z, if that doesn't work then report failure (5 or so times)
+            report("failed to "..tostring(x)..", "..tostring(y)..", "..tostring(z).." faulted on Y axis, attempting to compensate.")
+            local wiggle = {1,0,0, -1,0,0, 0,0,1, 0,0,-1, 0,y < Y and 1 or 0,0 ,0,-1,0}
+            if wiggle[14] == 1 then wiggle[17] = 0 end
+            local attemptCount = 0
+            --alternative
+            --[[
+                moved = step(opposite of the failed directionup)
+                if not moved then
+                    for i=1,6 do --if not moved
+                        --turn manually here
+                        moved = step(1) -- try to move forward, I think 1 is forward
+                        if moved then break end
+                    end
+                end
+            ]]
+            repeat --try to wiggle out
+                local wiggleIndex = attemptCount * 3 + 1
+                attemptCount = attemptCount + 1
+                local xOff,yOff,zOff = wiggle[wiggleIndex], wiggle[wiggleIndex+1], wiggle[wiggleIndex+2]
+                if math.abs(xOff)+math.abs(yOff)+math.abs(zOff) > 0 then
+                    local returnstr = "attempt number "..tostring(attemptCount).." coordinates: "..tostring(X + xOff)..", "..tostring(Y + yOff)..", "..tostring(Z + zOff)
+                    moved = moveTo(X + xOff, Y + yOff, Z + zOff, nil, true)
+                    report(returnstr.. " = "..tostring(moved))
+                end
+            until attemptCount == 6 or moved
+            
+            --fails if it tries to move down without changing X or Z, need to do +- on x and z until one of them works
+            --if all fail, try to move up, and if that fails report the robot is completely stuck (idk how this could happen)
+        elseif (funcIndex == 2 or funcIndex == 3) then --if failed on x or z 
+            --and didn't try to move up, then move up
+            local unstuckAttempt = moveTo(x,y+1,z,nil,true) --try up and down first
+            local returnstr = "failed to move on "..(funcIndex == 2 and "X" or "Z").." axis, attempting to autocorrect by moving up.."
+            if not unstuckAttempt then
+                unstuckAttempt = moveTo(x,y-1,z,nil,true)
+                if not unstuckAttempt then
+                    returnstr = returnstr.." tried to move down and failed, autocorrect failed."
+                else
+                    returnstr = returnstr.." autocorrect successful."
+                end
+            else
+                returnstr = returnstr.." successfully moved upwards."
+            end
+            moved = unstuckAttempt
+            report(returnstr)
+        end
+        ignore_check = original_ignore_check
+    end
+    if not disableAutocorrect and not moved then --still hasn't moved
+        report("failed to move from ("..tostring(X)..", "..tostring(Y)..", "..tostring(Z)..") to ("..tostring(x)..", "..tostring(y)..", "..tostring(z)..") on funcIndex "..tostring(funcIndex))
+    end
+    return moved
 end
 
 scan = function(xx, zz) -- scan square 8*8 relative to robot
@@ -293,7 +357,7 @@ calibration = function()
         end
     end
     local energy = computer.energy() -- check energy level
-    step(0) -- сделать шаг
+    moveTo(0,-1,0) -- сделать шаг
     E_C = math.ceil(energy - computer.energy()) -- write consumption level
     energy = robot.durability() -- get the wear/discharge rate of the tool
     while energy == robot.durability() do -- while is no difference
@@ -626,7 +690,7 @@ end
 main = function()
     border = nil
     while not border do
-        step(0) --kind of an issue, if it finds something it can't handle, it just quits before it starts
+        moveTo(X, Y-1, Z) --kind of an issue, if it finds something it can't handle, it just quits before it starts
         for q = 1, 4 do
             scan(table.unpack(quads[q]))
         end
