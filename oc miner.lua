@@ -8,7 +8,7 @@ local steps, turns = 0, 0 -- debug
 local WORLD = {x = {}, y = {}, z = {}} -- points table
 local E_C, W_R = 0, 0 -- energy consumption per step and wear rate
 local posData = {0, 0, 0, [0] = 1} -- table to store chunk coordinates, should store this at the top of the script to access the current chunk entry
-local chunkEntries = {} --entry coordinates for chunks
+local chunkEntries = {{0,-2,0}} --entry coordinates for chunks
 local currentChunk = 1
 
 local function arr2dict(tbl) -- converting a list into an associative array
@@ -155,7 +155,8 @@ end
 
 step = function(side, ignore) -- function of moving by 1 block
     local result, obstacle = robot.swing(side)
-    if not result and obstacle ~= "air" and robot.detect(side) then -- if block is indestructible/unbreakable
+    local detected, whatsDetected = robot.detect(side)
+    if not result and obstacle ~= "air" and detected and whatsDetected == "solid" then -- if block is indestructible/unbreakable, need to make sure that it is a block
         --not the best thing, 
         --if its down, then just set the border to it
         
@@ -168,7 +169,7 @@ step = function(side, ignore) -- function of moving by 1 block
         end
         return false
     else
-        while robot.swing(side) do
+        while robot.swing(side) and whatsDetected == "solid" do
         end -- mine while can
     end
     local hasMoved = robot.move(side) 
@@ -733,7 +734,8 @@ local Tau = computer.uptime() -- get current time
 for o = 1, 10 do -- spiral boundary cycle
     for i = 1, 2 do -- coordinate update cycle
         for a = 1, o do -- spiral cycle
-            report("chunk #" .. posData[3] .. " started") -- report the completion of work in the chunk
+            local chunkdata = chunkEntries[currentChunk]
+            report("Started working on chunk "..tostring(currentChunk).." at coordinates "..tostring(chunkdata[1])..", "..tostring(chunkdata[2])..", "..tostring(chunkdata[3]))
             main() -- start the scanning and mining function
             posData[i], posData[3] = posData[i] + posData[0], posData[3] + 1 -- update coordinates
             if posData[3] == chunks then -- if the last chunk is reached, should be if posData[3] > chunks I think
@@ -741,14 +743,13 @@ for o = 1, 10 do -- spiral boundary cycle
                 report(computer.uptime() - Tau .. " seconds\npath length: " .. steps .. "\nmade turns: " .. turns, true) -- report the completion of work
             else
                 WORLD = {x = {}, y = {}, z = {}}
+                moveTo(chunkdata[1], chunkdata[2], chunkdata[3], returnHomeOrder)
                 currentChunk = posData[3] + 1
-                local chunkdata = {posData[1] * 16, 2, posData[2] * 16}
+                chunkdata = {posData[1] * 16, -2, posData[2] * 16}
                 chunkEntries[currentChunk] = chunkdata
-                report("Started working on chunk "..tostring(currentChunk).." at coordinates "..tostring(chunkdata[1])..", "..tostring(chunkdata[2])..", "..tostring(chunkdata[3]))
                 --print("set current chunk data of chunk "..tostring(posData[3]).." to ",chunkEntries[posData[3]])
-                sleep(10)
-                moveTo(table.unpack(chunkdata)) -- go to next chunk
-                moveTo(X, 0, Z) -- go down and find minerals with scan
+                --sleep(10)
+                moveTo(chunkdata[1], chunkdata[2], chunkdata[3], returnHomeOrder) -- go to next chunk
             end
         end
     end
