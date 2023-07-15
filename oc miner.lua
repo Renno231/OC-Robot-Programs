@@ -1,3 +1,13 @@
+--[[
+    todo
+    make this into miner.lua
+    make init.lua do the initialization with the server (if present)
+        which then runs miner.lua
+        variables X, Y, Z, D, border, E_C, W_R, posData, chunkEntries, currentChunk need to be GLOBAL
+        this is so that when or if the miner.lua file (this one) errors, it can be reported to the server
+        and init.lua can auto restart the miner while preserving the data of the run
+]]
+
 --local component = require('component') -- OpenOS lib
 --local computer = require('computer')
 local chunks = 9 -- number of mining chunks
@@ -155,7 +165,7 @@ end
 
 step = function(side, ignore) -- function of moving by 1 block
     local result, obstacle = robot.swing(side)
-    local detected, whatsDetected = robot.detect(side)
+    local detected, whatsDetected = robot.detect(side) --might be unnecessary
     if not result and obstacle ~= "air" and detected and whatsDetected == "solid" then -- if block is indestructible/unbreakable, need to make sure that it is a block
         --not the best thing, 
         --if its down, then just set the border to it
@@ -690,7 +700,7 @@ end
 --(?) need to make it move to the top of the chunks when starting a new chunk, and return to the top of each one, and then return to the top of the center chunk 
 main = function()
     border = nil
-    while not border do
+    while not border do --seems to sometimes prematurely conclude and move to next chunk
         moveTo(X, Y-1, Z) --kind of an issue, if it finds something it can't handle, it just quits before it starts
         for q = 1, 4 do
             scan(table.unpack(quads[q]))
