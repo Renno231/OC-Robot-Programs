@@ -738,30 +738,44 @@ main = function()
     sorter()
 end
 
+local _O, _I, _A, finished = 1,1,1, false --keeps track in case of error
+
 calibration() -- start calibration
 calibration = nil -- free the memory from the calibration function
 local Tau = computer.uptime() -- get current time
-for o = 1, 10 do -- spiral boundary cycle
-    for i = 1, 2 do -- coordinate update cycle
-        for a = 1, o do -- spiral cycle
-            local chunkdata = chunkEntries[currentChunk]
-            report("Started working on chunk "..tostring(currentChunk).." at coordinates "..tostring(chunkdata[1])..", "..tostring(chunkdata[2])..", "..tostring(chunkdata[3]))
-            main() -- start the scanning and mining function
-            posData[i], posData[3] = posData[i] + posData[0], posData[3] + 1 -- update coordinates
-            if posData[3] == chunks then -- if the last chunk is reached, should be if posData[3] > chunks I think
-                home(true, true) -- go home
-                report(computer.uptime() - Tau .. " seconds\npath length: " .. steps .. "\nmade turns: " .. turns, true) -- report the completion of work
-            else
-                WORLD = {x = {}, y = {}, z = {}}
-                moveTo(chunkdata[1], chunkdata[2], chunkdata[3], returnHomeOrder)
-                currentChunk = posData[3] + 1
-                chunkdata = {posData[1] * 16, -2, posData[2] * 16}
-                chunkEntries[currentChunk] = chunkdata
-                --print("set current chunk data of chunk "..tostring(posData[3]).." to ",chunkEntries[posData[3]])
-                --sleep(10)
-                moveTo(chunkdata[1], chunkdata[2], chunkdata[3], returnHomeOrder) -- go to next chunk
+
+function digOperation()
+    for o = _O, 10 do -- spiral boundary cycle
+        _O = o
+        for i = _I, 2 do -- coordinate update cycle
+            _I = i
+            for a = _A, o do -- spiral cycle
+                _A = a
+                local chunkdata = chunkEntries[currentChunk]
+                report("Started working on chunk "..tostring(currentChunk).." at coordinates "..tostring(chunkdata[1])..", "..tostring(chunkdata[2])..", "..tostring(chunkdata[3]))
+                main() -- start the scanning and mining function
+                posData[i], posData[3] = posData[i] + posData[0], posData[3] + 1 -- update coordinates
+                if posData[3] == chunks then -- if the last chunk is reached, should be if posData[3] > chunks I think
+                    home(true, true) -- go home
+                    report(computer.uptime() - Tau .. " seconds\npath length: " .. steps .. "\nmade turns: " .. turns, true) -- report the completion of work
+                    finished = true
+                else
+                    WORLD = {x = {}, y = {}, z = {}}
+                    moveTo(chunkdata[1], chunkdata[2], chunkdata[3], returnHomeOrder)
+                    currentChunk = posData[3] + 1
+                    chunkdata = {posData[1] * 16, -2, posData[2] * 16}
+                    chunkEntries[currentChunk] = chunkdata
+                    --print("set current chunk data of chunk "..tostring(posData[3]).." to ",chunkEntries[posData[3]])
+                    --sleep(10)
+                    moveTo(chunkdata[1], chunkdata[2], chunkdata[3], returnHomeOrder) -- go to next chunk
+                end
             end
         end
+        posData[0] = 0 - posData[0] -- update spiral rotation direction
     end
-    posData[0] = 0 - posData[0] -- update spiral rotation direction
+end
+
+while not finished do
+    result = {xpcall(digOperation, debug.traceback)}
+    report("Dig Operation error: "..table.concat(result, ", "))
 end
