@@ -236,7 +236,7 @@ moveTo = function(x, y, z, order, disableAutocorrect) -- move to exact coordinat
             break    
         end
     end
-    local tdirsMoved = #dirsMoved --total directions moved
+    --[=[local tdirsMoved = #dirsMoved --total directions moved
     if disableAutocorrect~=true and not moved and tdirsMoved < 3 then --if movement failed, try again, funcIndex is the direction it failed on
         local original_ignore_check, ignore_check = ignore_check, true
         if funcIndex == 1 then
@@ -288,7 +288,7 @@ moveTo = function(x, y, z, order, disableAutocorrect) -- move to exact coordinat
             report(returnstr)
         end
         ignore_check = original_ignore_check
-    end
+    end]=]
     if not disableAutocorrect and not moved then --still hasn't moved
         report("failed to move from ("..tostring(X)..", "..tostring(Y)..", "..tostring(Z)..") to ("..tostring(x)..", "..tostring(y)..", "..tostring(z)..") on funcIndex "..tostring(funcIndex))
     end
@@ -611,6 +611,7 @@ home = function(forcibly, interrupt) -- return to the starting point and drop th
     end
     if forcibly then
         report("Tool search in container")
+        local toolDurability, toolDesc = robot.durability() --fix later
         if robot.durability() < 0.3 then -- if the strength of the tool is less than 30%
             robot.select(1) -- select 1 slot
             controller.equip() -- move tool to inventory
@@ -687,7 +688,7 @@ home = function(forcibly, interrupt) -- return to the starting point and drop th
 end
 --(?) need to make it move to the top of the chunks when starting a new chunk, and return to the top of each one, and then return to the top of the center chunk 
 main = function()
-    if X == chunkdata[1] and Y == chunkdata[2] and Z == chunkdata[3] then --at the chunk entry point
+    if currentChunk == 1 or (X == chunkdata[1] and Y == chunkdata[2] and Z == chunkdata[3]) then --at the chunk entry point
         border = nil
         while not border do --seems to sometimes prematurely conclude and move to next chunk
             moveTo(X, Y-1, Z) --kind of an issue, if it finds something it can't handle, it just quits before it starts
@@ -751,9 +752,9 @@ function digOperation()
                 main() -- start the scanning and mining function
                 posData[i], posData[3] = posData[i] + posData[0], posData[3] + 1 -- update coordinates
                 if posData[3] == chunks then -- if the last chunk is reached, should be if posData[3] > chunks I think
+                    finished = true
                     home(true, true) -- go home
                     report(computer.uptime() - Tau .. " seconds\npath length: " .. steps .. "\nmade turns: " .. turns, true) -- report the completion of work
-                    finished = true
                 else
                     WORLD = {x = {}, y = {}, z = {}}
                     moveTo(chunkdata[1], chunkdata[2], chunkdata[3], returnHomeOrder)
