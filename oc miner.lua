@@ -1,15 +1,3 @@
---[[
-    todo
-    make this into miner.lua
-    make init.lua do the initialization with the server (if present)
-        which then runs miner.lua
-        variables X, Y, Z, D, border, E_C, W_R, posData, chunkEntries, currentChunk need to be GLOBAL
-        this is so that when or if the miner.lua file (this one) errors, it can be reported to the server
-        and init.lua can auto restart the miner while preserving the data of the run
-]]
-
---local component = require('component') -- OpenOS lib
---local computer = require('computer')
 local chunks = 9 -- number of mining chunks
 local hardness = {2.2, 40} -- minimum and maximum hardness
 local port = 1 -- robot communication port
@@ -68,7 +56,7 @@ sleep = function(timeout)
 end
 
 local reportStr = ""
-report = function(message, stop) -- status report
+report = function(message, stop) -- status report, needs to include current chunk number and formatted XYZ with %-5s
     message = message .. " |" .. X .. ", " .. Y .. ", " .. Z .. "| energy level: " .. math.floor(energy_level() * 100) .. "%" -- add coordinates and energy level to message
     if modem then -- "if modem installed"
     if not penpal then
@@ -137,7 +125,8 @@ check = function(forcibly) -- tool and battery check, points remove
                         break
                     end
                 end
-                report("return to work")
+
+                report("return to work in chunk "..tostring(currentChunk).." at coordinates "..tostring(chunkdata[1])..", "..tostring(chunkdata[2])..", "..tostring(chunkdata[3]))
             end
         end
     end
@@ -164,9 +153,9 @@ check = function(forcibly) -- tool and battery check, points remove
 end
 
 step = function(side, ignore) -- function of moving by 1 block
-    local result, obstacle = robot.swing(side)
+    local swung, obstacle = robot.swing(side)
     local detected, whatsDetected = robot.detect(side) --might be unnecessary
-    if not result and obstacle ~= "air" and detected and whatsDetected == "solid" then -- if block is indestructible/unbreakable, need to make sure that it is a block
+    if not swung and detected then -- if block is indestructible/unbreakable, need to make sure that it is a block
         --not the best thing, 
         --if its down, then just set the border to it
         
@@ -178,9 +167,8 @@ step = function(side, ignore) -- function of moving by 1 block
             --report("insurmountable obstacle: "..obstacle, true) -- send message
         end
         return false
-    else
-        while robot.swing(side) and whatsDetected == "solid" do
-        end -- mine while can
+    elseif whatsDetected == "solid" then
+        while robot.swing(side) do end -- mine while can
     end
     local hasMoved = robot.move(side) 
     if hasMoved then -- if robot moves, change coordinates
@@ -533,7 +521,7 @@ home = function(forcibly, interrupt) -- return to the starting point and drop th
     local x, y, z, d
     local currentChunkEntry = chunkEntries[currentChunk]
     --print("currentChunk",currentChunk, currentChunkEntry)
-    report("ore unloading")
+    report("Returning home for ore unloading.")
     ignore_check = true
     local enderchest  -- reset enderchest slot
     for slot = 1, inventory do -- scan inventory
@@ -622,7 +610,7 @@ home = function(forcibly, interrupt) -- return to the starting point and drop th
         end
     end
     if forcibly then
-        report("tool search in container")
+        report("Tool search in container")
         if robot.durability() < 0.3 then -- if the strength of the tool is less than 30%
             robot.select(1) -- select 1 slot
             controller.equip() -- move tool to inventory
@@ -639,8 +627,8 @@ home = function(forcibly, interrupt) -- return to the starting point and drop th
             end
             controller.equip() -- equip
         end
-        report("attempt to repair tool")
         if robot.durability() < 0.3 then -- if the instrument has not been replaced by a better one
+            report("Attempting to repair tool...")
             for side = 1, 3 do -- check all sides
                 local name = controller.getInventoryName(3) -- gei invenory name
                 if name == "opencomputers:charger" or name == "tile.oc.charger" then -- check name
@@ -687,7 +675,7 @@ home = function(forcibly, interrupt) -- return to the starting point and drop th
     end
     ignore_check = nil
     if not interrupt then --return to previous
-        report("return to work")
+        report("return to work in chunk "..tostring(currentChunk).." at coordinates "..tostring(x)..", "..tostring(y)..", "..tostring(z))
         --adjust for chunk entry
         moveTo(0,-2,0) 
         if currentChunk~=1 then
@@ -699,13 +687,15 @@ home = function(forcibly, interrupt) -- return to the starting point and drop th
 end
 --(?) need to make it move to the top of the chunks when starting a new chunk, and return to the top of each one, and then return to the top of the center chunk 
 main = function()
-    border = nil
-    while not border do --seems to sometimes prematurely conclude and move to next chunk
-        moveTo(X, Y-1, Z) --kind of an issue, if it finds something it can't handle, it just quits before it starts
-        for q = 1, 4 do
-            scan(table.unpack(quads[q]))
+    if X == chunkdata[1] and Y == chunkdata[2] and Z == chunkdata[3] then --at the chunk entry point
+        border = nil
+        while not border do --seems to sometimes prematurely conclude and move to next chunk
+            moveTo(X, Y-1, Z) --kind of an issue, if it finds something it can't handle, it just quits before it starts
+            for q = 1, 4 do
+                scan(table.unpack(quads[q]))
+            end
+            check(true)
         end
-        check(true)
     end
     while #WORLD.x ~= 0 do
         local n_delta, c_delta, current = math.huge, math.huge
@@ -739,8 +729,13 @@ main = function()
 end
 
 local _O, _I, _A, finished = 1,1,1, false --keeps track in case of error
+result = {xpcall(calibration, debug.traceback)}
+if #result > 0 and result[1]~=true then
+    for i,v in ipairs (result) do result[i] = tostring(v) end
+    report("Calibration failure: "..table.concat(result, ", "))
+    return
+end
 
-calibration() -- start calibration
 calibration = nil -- free the memory from the calibration function
 local Tau = computer.uptime() -- get current time
 
@@ -751,7 +746,7 @@ function digOperation()
             _I = i
             for a = _A, o do -- spiral cycle
                 _A = a
-                local chunkdata = chunkEntries[currentChunk]
+                chunkdata = chunkEntries[currentChunk]
                 report("Started working on chunk "..tostring(currentChunk).." at coordinates "..tostring(chunkdata[1])..", "..tostring(chunkdata[2])..", "..tostring(chunkdata[3]))
                 main() -- start the scanning and mining function
                 posData[i], posData[3] = posData[i] + posData[0], posData[3] + 1 -- update coordinates
@@ -777,5 +772,6 @@ end
 
 while not finished do
     result = {xpcall(digOperation, debug.traceback)}
+    for i,v in ipairs (result) do result[i] = tostring(v) end
     report("Dig Operation error: "..table.concat(result, ", "))
 end
