@@ -456,6 +456,7 @@ sorter = function(pack) -- sort inventory
                 end
             end
         end
+        while robot.suck(1) do end
         ------- main craft cycle -------
         for o, m in pairs(available) do
             if m > 8 then
