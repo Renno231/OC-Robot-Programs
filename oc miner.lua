@@ -42,7 +42,7 @@ local tunnel = getComponent("tunnel")
 local modem = getComponent("modem")
 local robot = getComponent("robot")
 local inventory, currentSlot = robot.inventorySize(), robot.select()
-local penpal, moveTo, energy_level, sleep, report, remove_point, check, step, turn, smart_turn, go, scan, calibration, sorter, home, main, solar, ignore_check, inv_check
+local penpal, moveTo, energy_level, sleep, report, remove_point, check, step, turn, smart_turn, go, scan, calibration, sorter, home, main, solar, ignore_check, inv_check, dump
 
 energy_level = function()
     return computer.energy() / computer.maxEnergy()
@@ -384,28 +384,27 @@ inv_check = function()
     end
     local items = 0
     for slot = 1, inventory do
-        local item = controller.getStackInInternalSlot(slot) -- get item info
-        if item then
-            local name = item.name:gsub("%g+:", "")
-            if fodder[name] then -- check for a match on the trash list
-                currentSlot = robot.select(slot) -- select slot
-                robot.drop(0) -- drop to trash
-            else
-                items = items + 1
-            end
+        if robot.count(slot) > 0 then
+            items = items + 1
         end
     end
     if inventory - items < 10 or items / inventory > 0.9 then
-        while robot.suck(1) do end
-        home(true)
+        dump()
+        items = 0
+        for slot = 1, inventory do
+            if robot.count(slot) > 0 then
+                items = items + 1
+            end
+        end
+        --while robot.suck(1) do end --why?
+        if inventory - items < 10 or items / inventory > 0.9 then
+            home(true)
+        end
     end
 end
 
-sorter = function(pack) -- sort inventory
-    robot.swing(0) -- make room for trash
-    robot.swing(1) -- make room for buffer
-    ------- clear trash -------
-    local empty, available = 0, {} -- create a counter of empty slots and available for packing
+dump = function(available) --available is table
+    local empty = 0
     for slot = 1, inventory do -- check inventory
         local item = controller.getStackInInternalSlot(slot) -- get item info
         if item then -- if item exists
@@ -425,6 +424,15 @@ sorter = function(pack) -- sort inventory
             empty = empty + 1 -- update counter
         end
     end
+    return empty
+end
+
+sorter = function(pack) -- sort inventory
+    robot.swing(0) -- make room for trash
+    robot.swing(1) -- make room for buffer
+    ------- clear trash -------
+    local empty, available = 0, {} -- create a counter of empty slots and available for packing
+    empty = dump(available)
     -- packing --
     if crafting and (empty < 12 or pack) then -- if there is a workbench and less than 12 free slots or forced packing is true
         -- transferring unnecessary items to the buffer --
