@@ -44,6 +44,10 @@ local robot = getComponent("robot")
 local inventory, currentSlot = robot.inventorySize(), robot.select()
 local penpal, moveTo, energy_level, sleep, report, remove_point, check, step, turn, smart_turn, go, scan, calibration, sorter, home, main, solar, ignore_check, inv_check, dump
 
+--local lastTimeDone = {} --[action] = success, e.g. swing() sets to true or false/nil when called
+--so if it swung, and it didn't break anything, don't do a inventory check and thus save on component calls
+--wrap functions
+
 energy_level = function()
     return computer.energy() / computer.maxEnergy()
 end
@@ -456,7 +460,6 @@ sorter = function(pack) -- sort inventory
                 end
             end
         end
-        while robot.suck(1) do end
         ------- main craft cycle -------
         for o, m in pairs(available) do
             if m > 8 then
@@ -550,7 +553,7 @@ home = function(forcibly, interrupt) -- return to the starting point and drop th
         moveTo(0,-2,0, returnHomeOrder) 
         moveTo(0,0,0)
     end
-    sorter() -- inventory slot
+    --sorter() -- inventory slot
     local size = nil -- reset container size
     while true do -- go to endless loop
         for side = 1, 4 do -- container search
