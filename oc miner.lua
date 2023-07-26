@@ -6,8 +6,8 @@ local steps, turns = 0, 0 -- debug
 local WORLD = {x = {}, y = {}, z = {}} -- points table
 local E_C, W_R = 0, 0 -- energy consumption per step and wear rate
 local posData = {0, 0, 0, [0] = 1} -- table to store chunk coordinates, should store this at the top of the script to access the current chunk entry
-local chunkEntries = {{0,-2,0}} --entry coordinates for chunks
-local currentChunk = 1
+local currentChunk, entryHeight = 1, -2
+local chunkEntries = {{0,entryHeight,0}} --entry coordinates for chunks
 
 local function arr2dict(tbl) -- converting a list into an associative array
     for i = #tbl, 1, -1 do
@@ -19,7 +19,7 @@ local quads = {{-7, -7}, {-7, 1}, {1, -7}, {1, 1}}
 local workbench = {1, 2, 3, 5, 6, 7, 9, 10, 11}
 local returnHomeOrder = {3,2,1}
 local wlist = {"enderstorage:ender_storage"}
-local fragments = {"redstone", "coal", "dye", "diamond", "emerald"}
+local fragments = {"redstone", "coal", "dye", "diamond", "emerald", "electrotine"}
 local fodder = {'deepslate','cobbleddeepslate','cobblestone','granite','diorite','andesite','marble','limestone','dirt','gravel','sand','stained_hardened_clay','sandstone','stone','grass','end_stone','hardened_clay','mossy_cobblestone','planks','fence','torch','nether_brick','nether_brick_fence','nether_brick_stairs','netherrack','soul_sand'}
 arr2dict(wlist)
 arr2dict(fragments)
@@ -41,7 +41,7 @@ local geolyzer = getComponent("geolyzer")
 local tunnel = getComponent("tunnel")
 local modem = getComponent("modem")
 local robot = getComponent("robot")
-local inventory = robot.inventorySize()
+local inventory, currentSlot = robot.inventorySize(), robot.select()
 local penpal, moveTo, energy_level, sleep, report, remove_point, check, step, turn, smart_turn, go, scan, calibration, sorter, home, main, solar, ignore_check, inv_check
 
 energy_level = function()
@@ -84,15 +84,22 @@ end
 
 check = function(forcibly) -- tool and battery check, points remove
     if not ignore_check and (steps % 32 == 0 or forcibly) then -- if moved on 32seps or enabled "force mode"
+        local item = controller.getStackInInternalSlot(currentSlot) -- get item info
+        if item then -- if item exists
+            local name = item.name:gsub("%g+:", "")
+            if fodder[name] then -- check for a match on the trash list
+                robot.drop(0) -- drop to trash
+            end
+        end
         inv_check()
         local delta = math.abs(X) + math.abs(Y) + math.abs(Z) + 64 -- get distance
         if robot.durability() / W_R < delta then -- if tool is worn
-            report("tool is worn")
+            report("Tool is worn")
             ignore_check = true
             home(true) -- go home
         end
         if delta * E_C > computer.energy() then -- check energy level
-            report("battery is low")
+            report("Battery is low")
             ignore_check = true
             home(true) -- go home
         end
@@ -101,7 +108,7 @@ check = function(forcibly) -- tool and battery check, points remove
             if generator and generator.count() == 0 and not forcibly then -- if generator installed
                 report("refueling solid fuel generators")
                 for slot = 1, inventory do -- check inventory
-                    robot.select(slot) -- select slot
+                    currentSlot = robot.select(slot) -- select slot
                     for gen in component.list("generator") do -- check all generators
                         if component.proxy(gen).insert() then -- try to refuel
                             break
@@ -155,16 +162,9 @@ end
 step = function(side, ignore) -- function of moving by 1 block
     local swung, obstacle = robot.swing(side)
     local detected, whatsDetected = robot.detect(side) --might be unnecessary
-    if not swung and detected then -- if block is indestructible/unbreakable, need to make sure that it is a block
-        --not the best thing, 
-        --if its down, then just set the border to it
-        
+    if not swung and detected then -- if block is indestructible/unbreakable
         if side == 0 then
             border = Y --new boundary
-            --return false
-        --else
-            --home(true) -- start ending function
-            --report("insurmountable obstacle: "..obstacle, true) -- send message
         end
         return false
     elseif whatsDetected == "solid" then
@@ -200,11 +200,7 @@ turn = function(side) -- turn
     side = side or false
     if robot.turn(side) and D then -- if the robot has turned, update the direction variable
         turns = turns + 1 -- debug
-        if side then
-            D = (D + 1) % 4
-        else
-            D = (D - 1) % 4
-        end
+        D = (D + (side and 1 or -1)) % 4
         check()
     end
 end
@@ -351,7 +347,7 @@ calibration = function()
     end
     for slot = 1, inventory do -- check inventory
         if robot.count(slot) == 0 then -- if slot is empty
-            robot.select(slot) -- select slot
+            currentSlot = robot.select(slot) -- select slot
             break
         end
     end
@@ -400,8 +396,7 @@ inv_check = function()
         end
     end
     if inventory - items < 10 or items / inventory > 0.9 then
-        while robot.suck(1) do
-        end
+        while robot.suck(1) do end
         home(true)
     end
 end
@@ -416,10 +411,10 @@ sorter = function(pack) -- sort inventory
         if item then -- if item exists
             local name = item.name:gsub("%g+:", "")
             if fodder[name] then -- check for a match on the trash list
-                robot.select(slot) -- select slot
+                currentSlot = robot.select(slot) -- select slot
                 robot.drop(0) -- drop to trash
                 empty = empty + 1 -- update counter
-            elseif fragments[name] then -- if there is a match in the fragment list
+            elseif fragments[name] and available then -- if there is a match in the fragment list
                 if available[name] then -- if a counter has already been created
                     available[name] = available[name] + item.size -- update count
                 else
@@ -443,7 +438,7 @@ sorter = function(pack) -- sort inventory
                         if available[name] then -- if there's one in the counter
                             available[name] = available[name] - item.size -- update counter
                         end
-                        robot.select(slot) -- select slot
+                        currentSlot = robot.select(slot) -- select slot
                         robot.drop(1) -- buffer
                         empty = empty - 1 -- update counter
                     end
@@ -461,7 +456,7 @@ sorter = function(pack) -- sort inventory
                     -- clear working zone --
                     for i = 1, 9 do -- check workbench slots
                         if robot.count(workbench[i]) > 0 then -- if not empty
-                            robot.select(workbench[i]) -- select slot
+                            currentSlot = robot.select(workbench[i]) -- select slot
                             for slot = 4, inventory do -- inventory overrun
                                 if slot == 4 or slot == 8 or slot > 11 then -- exclude workbench slots
                                     robot.transferTo(slot) -- try to move items
@@ -481,7 +476,7 @@ sorter = function(pack) -- sort inventory
                         local item = controller.getStackInInternalSlot(slot) -- get item info
                         if item and (slot == 4 or slot == 8 or slot > 11) then -- if item outside working zone is exists
                             if o == item.name:gsub("%g+:", "") then -- if item is same
-                                robot.select(slot) -- select slot when get match
+                                currentSlot = robot.select(slot) -- select slot when get match
                                 for n = 1, 10 do -- workbench filling cycle
                                     robot.transferTo(workbench[n % 9 + 1], item.size / 9) -- divide the current stack into 9 pieces and move it to the workbench.
                                 end
@@ -491,7 +486,7 @@ sorter = function(pack) -- sort inventory
                             end
                         end
                     end
-                    robot.select(inventory) -- select last inventory slot
+                    currentSlot = robot.select(inventory) -- select last inventory slot
                     crafting.craft() -- craft block
                     -- leftover sort cycle
                     for A = 1, inventory do -- main cycle
@@ -499,7 +494,7 @@ sorter = function(pack) -- sort inventory
                         if size > 0 and size < 64 then -- if the slot is neither empty nor full.
                             for B = A + 1, inventory do -- match cycle
                                 if robot.compareTo(B) then -- if items the same
-                                    robot.select(A) -- select slot
+                                    currentSlot = robot.select(A) -- select slot
                                     robot.transferTo(B, 64 - robot.count(B)) -- move until fill
                                 end
                                 if robot.count() == 0 then -- when a slot is free
@@ -536,7 +531,7 @@ home = function(forcibly, interrupt) -- return to the starting point and drop th
     if enderchest and not forcibly then -- if there's a enderchest and no forced return home.
         -- step(1) -- move up
         robot.swing(3) -- make room for the chest
-        robot.select(enderchest) -- select chest
+        currentSlot = robot.select(enderchest) -- select chest
         robot.place(3) -- place chest
     else
         x, y, z, d = X, Y, Z, D
@@ -567,7 +562,7 @@ home = function(forcibly, interrupt) -- return to the starting point and drop th
         local item = controller.getStackInInternalSlot(slot)
         if item then -- если слот не пуст
             if not wlist[item.name] then -- if item is not in white list
-                robot.select(slot) -- select slot
+                currentSlot = robot.select(slot) -- select slot
                 local a, b = robot.drop(3) -- drop to container
                 if not a and b == "inventory full" then -- if container is full
                     while not robot.drop(3) do -- wait until he's free
@@ -592,7 +587,7 @@ home = function(forcibly, interrupt) -- return to the starting point and drop th
             local item = controller.getStackInInternalSlot(slot)
             if item then -- если слот не пуст
                 if not wlist[item.name] then -- if item is not in white list
-                    robot.select(slot) -- select slot
+                    currentSlot = robot.select(slot) -- select slot
                     robot.drop(3) -- drop to container
                 end
             end
@@ -613,7 +608,7 @@ home = function(forcibly, interrupt) -- return to the starting point and drop th
         report("Tool search in container")
         local toolDurability, toolDesc = robot.durability() --fix later
         if robot.durability() < 0.3 then -- if the strength of the tool is less than 30%
-            robot.select(1) -- select 1 slot
+            currentSlot = robot.select(1) -- select 1 slot
             controller.equip() -- move tool to inventory
             local tool = controller.getStackInInternalSlot(1) -- get tool info
             for slot = 1, size do
@@ -633,7 +628,7 @@ home = function(forcibly, interrupt) -- return to the starting point and drop th
             for side = 1, 3 do -- check all sides
                 local name = controller.getInventoryName(3) -- gei invenory name
                 if name == "opencomputers:charger" or name == "tile.oc.charger" then -- check name
-                    robot.select(1) -- select slot
+                    currentSlot = robot.select(1) -- select slot
                     controller.equip() -- equip
                     if robot.drop(3) then -- if can get the tool into the charger
                         local charge = controller.getStackInSlot(3, 1).charge
@@ -743,10 +738,13 @@ local Tau = computer.uptime() -- get current time
 function digOperation()
     for o = _O, 10 do -- spiral boundary cycle
         _O = o
+        if finished then break end
         for i = _I, 2 do -- coordinate update cycle
             _I = i
+            if finished then break end
             for a = _A, o do -- spiral cycle
                 _A = a
+                if finished then break end
                 chunkdata = chunkEntries[currentChunk]
                 report("Started working on chunk "..tostring(currentChunk).." at coordinates "..tostring(chunkdata[1])..", "..tostring(chunkdata[2])..", "..tostring(chunkdata[3]))
                 main() -- start the scanning and mining function
@@ -759,16 +757,19 @@ function digOperation()
                     WORLD = {x = {}, y = {}, z = {}}
                     moveTo(chunkdata[1], chunkdata[2], chunkdata[3], returnHomeOrder)
                     currentChunk = posData[3] + 1
-                    chunkdata = {posData[1] * 16, -2, posData[2] * 16}
+                    chunkdata = {posData[1] * 16, entryHeight, posData[2] * 16} --needs fixing, seems to be busted
                     chunkEntries[currentChunk] = chunkdata
                     --print("set current chunk data of chunk "..tostring(posData[3]).." to ",chunkEntries[posData[3]])
                     --sleep(10)
                     moveTo(chunkdata[1], chunkdata[2], chunkdata[3], returnHomeOrder) -- go to next chunk
                 end
             end
+            _A = 1
         end
+        _I = 1
         posData[0] = 0 - posData[0] -- update spiral rotation direction
     end
+    if finished then _O = 1 end
 end
 
 while not finished do
