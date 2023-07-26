@@ -84,13 +84,6 @@ end
 
 check = function(forcibly) -- tool and battery check, points remove
     if not ignore_check and (steps % 32 == 0 or forcibly) then -- if moved on 32seps or enabled "force mode"
-        local item = controller.getStackInInternalSlot(currentSlot) -- get item info
-        if item then -- if item exists
-            local name = item.name:gsub("%g+:", "")
-            if fodder[name] then -- check for a match on the trash list
-                robot.drop(0) -- drop to trash
-            end
-        end
         inv_check()
         local delta = math.abs(X) + math.abs(Y) + math.abs(Z) + 64 -- get distance
         if robot.durability() / W_R < delta then -- if tool is worn
@@ -391,8 +384,15 @@ inv_check = function()
     end
     local items = 0
     for slot = 1, inventory do
-        if robot.count(slot) > 0 then
-            items = items + 1
+        local item = controller.getStackInInternalSlot(slot) -- get item info
+        if item then
+            local name = item.name:gsub("%g+:", "")
+            if fodder[name] then -- check for a match on the trash list
+                currentSlot = robot.select(slot) -- select slot
+                robot.drop(0) -- drop to trash
+            else
+                items = items + 1
+            end
         end
     end
     if inventory - items < 10 or items / inventory > 0.9 then
