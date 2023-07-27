@@ -182,6 +182,7 @@ step = function(side, ignore) -- function of moving by 1 block
         if not swung then 
             if side == 0 then --unbreakable block
                 border = Y --new boundary
+                report("found new lower border at "..tostring(border))
             end
             return false
         else 
