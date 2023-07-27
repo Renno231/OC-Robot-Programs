@@ -176,19 +176,17 @@ check = function(forcibly) -- tool and battery check, points remove
 end
 
 step = function(side, ignore) -- function of moving by 1 block
-    local swung, obstacle = swing(side)
-    if not swung then -- if block is indestructible/unbreakable
-        if obstacle == "air" then
-            _, obstacle = robot.detect(side)
-        end
-        if obstacle == "solid" or obstacle == "block" then 
+    local detected, whatsDetected = robot.detect(side)
+    if whatsDetected == "solid" then -- if block is indestructible/unbreakable
+        local swung, obstacle = swing(side) --maybe should do detect first and then swing
+        if not swung then 
             if side == 0 then --unbreakable block
                 border = Y --new boundary
             end
             return false
+        else 
+            while swing(side) do end
         end
-    else
-        while swing(side) do end
     end
     local hasMoved = robot.move(side) 
     if hasMoved then -- if robot moves, change coordinates
