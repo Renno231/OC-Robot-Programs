@@ -44,9 +44,25 @@ local robot = getComponent("robot")
 local inventory, currentSlot = robot.inventorySize(), robot.select()
 local penpal, moveTo, energy_level, sleep, report, remove_point, check, step, turn, smart_turn, go, scan, calibration, sorter, home, main, solar, ignore_check, inv_check, dump
 
---local lastTimeDone = {} --[action] = success, e.g. swing() sets to true or false/nil when called
+--to avoid extra component calls
+local should = {invCheck = false, durCheck = false}
 --so if it swung, and it didn't break anything, don't do a inventory check and thus save on component calls
---wrap functions
+swing = function(side) 
+    local swung, obstacle = robot.swing(side)
+    if swung then 
+        should.invCheck = true
+        should.durCheck = true 
+    end
+    return swung, obstacle
+end
+
+suck = function(side)
+    local sucked = robot.suck(side)
+    if sucked then
+        should.invCheck = true
+    end
+    return sucked
+end
 
 energy_level = function()
     return computer.energy() / computer.maxEnergy()
@@ -90,10 +106,13 @@ check = function(forcibly) -- tool and battery check, points remove
     if not ignore_check and (steps % 32 == 0 or forcibly) then -- if moved on 32seps or enabled "force mode"
         inv_check()
         local delta = math.abs(X) + math.abs(Y) + math.abs(Z) + 64 -- get distance
-        if robot.durability() / W_R < delta then -- if tool is worn
-            report("Tool is worn")
-            ignore_check = true
-            home(true) -- go home
+        if should.durCheck then
+            should.durCheck = false
+            if robot.durability() / W_R < delta then -- if tool is worn
+                report("Tool is worn")
+                ignore_check = true
+                home(true) -- go home
+            end
         end
         if delta * E_C > computer.energy() then -- check energy level
             report("Battery is low")
@@ -141,14 +160,14 @@ check = function(forcibly) -- tool and battery check, points remove
                     ((WORLD.x[i] == X and ((WORLD.z[i] == Z + 1 and D == 0) or (WORLD.z[i] == Z - 1 and D == 2))) or
                         (WORLD.z[i] == Z and ((WORLD.x[i] == X + 1 and D == 3) or (WORLD.x[i] == X - 1 and D == 1))))
              then
-                robot.swing(3)
+                swing(3)
                 remove_point(i)
             end
             if X == WORLD.x[i] and (Y - 1 <= WORLD.y[i] and Y + 1 >= WORLD.y[i]) and Z == WORLD.z[i] then
                 if WORLD.y[i] == Y + 1 then -- mine the block from above, if any
-                    robot.swing(1)
+                    swing(1)
                 elseif WORLD.y[i] == Y - 1 then -- mine the block from below
-                    robot.swing(0)
+                    swing(0)
                 end
                 remove_point(i)
             end
@@ -157,15 +176,13 @@ check = function(forcibly) -- tool and battery check, points remove
 end
 
 step = function(side, ignore) -- function of moving by 1 block
-    local swung, obstacle = robot.swing(side)
-    local detected, whatsDetected = robot.detect(side) --might be unnecessary
-    if not swung and detected then -- if block is indestructible/unbreakable
-        if side == 0 then
+    local swung, obstacle = swing(side)
+    if not swung then -- if block is indestructible/unbreakable
+        local detected, whatsDetected = robot.detect(side) --might be unnecessary
+        if side == 0 and whatsDetected == "solid" then --unbreakable block
             border = Y --new boundary
         end
         return false
-    elseif whatsDetected == "solid" then
-        while robot.swing(side) do end -- mine while can
     end
     local hasMoved = robot.move(side) 
     if hasMoved then -- if robot moves, change coordinates
@@ -354,7 +371,7 @@ calibration = function()
     energy = robot.durability() -- get the wear/discharge rate of the tool
     while energy == robot.durability() do -- while is no difference
         robot.place(3) -- place block
-        robot.swing(3) -- mine block
+        swing(3) -- mine block
     end
     W_R = energy - robot.durability() -- write result
     local sides = {2, 1, 3, 0} -- link sides, for raw data
@@ -362,7 +379,7 @@ calibration = function()
     for s = 1, #sides do -- check all directions
         if robot.detect(3) or robot.place(3) then -- check block before mine
             local A = geolyzer.scan(-1, -1, 0, 3, 3, 1) -- do first scan
-            robot.swing(3) -- mine block
+            swing(3) -- mine block
             local B = geolyzer.scan(-1, -1, 0, 3, 3, 1) -- do second scan
             for n = 2, 8, 2 do -- check adjacent blocks in the table
                 if math.ceil(B[n]) - math.ceil(A[n]) < 0 then -- if block is gone
@@ -383,9 +400,10 @@ end
 
 inv_check = function()
     -- inventory check
-    if ignore_check then
+    if ignore_check or not should.invCheck then
         return
     end
+    should.invCheck = false --already done
     local items = 0
     for slot = 1, inventory do
         if robot.count(slot) > 0 then
@@ -400,7 +418,7 @@ inv_check = function()
                 items = items + 1
             end
         end
-        --while robot.suck(1) do end --why?
+        --while suck(1) do end --why?
         if inventory - items < 10 or items / inventory > 0.9 then
             home(true)
         end
@@ -432,8 +450,8 @@ dump = function(available) --available is table
 end
 
 sorter = function(pack) -- sort inventory
-    robot.swing(0) -- make room for trash
-    robot.swing(1) -- make room for buffer
+    swing(0) -- make room for trash
+    swing(1) -- make room for buffer
     ------- clear trash -------
     local empty, available = 0, {} -- create a counter of empty slots and available for packing
     empty = dump(available)
@@ -478,7 +496,7 @@ sorter = function(pack) -- sort inventory
                                 end
                             end
                             if robot.count() > 0 then -- if an overload is detected
-                                while robot.suck(1) do
+                                while suck(1) do
                                 end -- take items from buffer
                                 return -- stop packing
                             end
@@ -519,7 +537,7 @@ sorter = function(pack) -- sort inventory
             end
         end
     end
-    while robot.suck(1) do
+    while suck(1) do
     end --- get items from buffer
     inv_check()
 end
@@ -542,7 +560,7 @@ home = function(forcibly, interrupt) -- return to the starting point and drop th
     end
     if enderchest and not forcibly then -- if there's a enderchest and no forced return home.
         -- step(1) -- move up
-        robot.swing(3) -- make room for the chest
+        swing(3) -- make room for the chest
         currentSlot = robot.select(enderchest) -- select chest
         robot.place(3) -- place chest
     else
@@ -550,7 +568,7 @@ home = function(forcibly, interrupt) -- return to the starting point and drop th
         if currentChunk~=1 then
             moveTo(currentChunkEntry[1], currentChunkEntry[2], currentChunkEntry[3], returnHomeOrder) 
         end
-        moveTo(0,-2,0, returnHomeOrder) 
+        moveTo(0,entryHeight,0, returnHomeOrder) 
         moveTo(0,0,0)
     end
     --sorter() -- inventory slot
@@ -650,7 +668,7 @@ home = function(forcibly, interrupt) -- return to the starting point and drop th
                             local n_charge = controller.getStackInSlot(3, 1).charge -- get charge info
                             if charge then
                                 if n_charge == max_charge then
-                                    robot.suck(3) -- get item
+                                    suck(3) -- get item
                                     controller.equip() -- equip
                                     break -- stop charging
                                 else
@@ -674,7 +692,7 @@ home = function(forcibly, interrupt) -- return to the starting point and drop th
         end
     end
     if enderchest and not forcibly then
-        robot.swing(3) -- get chest
+        swing(3) -- get chest
     else
         while energy_level() < 0.98 do -- wait until battery is full
             report("charging")
@@ -685,7 +703,7 @@ home = function(forcibly, interrupt) -- return to the starting point and drop th
     if not interrupt then --return to previous
         report("return to work in chunk "..tostring(currentChunk).." at coordinates "..tostring(x)..", "..tostring(y)..", "..tostring(z))
         --adjust for chunk entry
-        moveTo(0,-2,0) 
+        moveTo(0,entryHeight,0) 
         if currentChunk~=1 then
             moveTo(currentChunkEntry[1], currentChunkEntry[2], currentChunkEntry[3])
         end
