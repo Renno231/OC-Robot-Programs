@@ -188,7 +188,7 @@ step = function(side, ignore) -- function of moving by 1 block
             return false
         end
     else
-        while swung(side) do end
+        while swing(side) do end
     end
     local hasMoved = robot.move(side) 
     if hasMoved then -- if robot moves, change coordinates
