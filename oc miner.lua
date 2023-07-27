@@ -179,10 +179,14 @@ step = function(side, ignore) -- function of moving by 1 block
     local swung, obstacle = swing(side)
     if not swung then -- if block is indestructible/unbreakable
         local detected, whatsDetected = robot.detect(side) --might be unnecessary
-        if side == 0 and whatsDetected == "solid" then --unbreakable block
-            border = Y --new boundary
+        if whatsDetected == "solid" then 
+            if side == 0 then --unbreakable block
+                border = Y --new boundary
+            end
+            return false
         end
-        return false
+    else
+        while swung(side) do end
     end
     local hasMoved = robot.move(side) 
     if hasMoved then -- if robot moves, change coordinates
