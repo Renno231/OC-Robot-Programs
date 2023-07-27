@@ -176,8 +176,8 @@ check = function(forcibly) -- tool and battery check, points remove
 end
 
 step = function(side, ignore) -- function of moving by 1 block
-    local detected, whatsDetected = robot.detect(side)
-    if whatsDetected == "solid" then -- if block is indestructible/unbreakable
+    local barrier, whatsDetected = robot.detect(side)
+    if barrier then -- if block is indestructible/unbreakable
         local swung, obstacle = swing(side) --maybe should do detect first and then swing
         if not swung then 
             if side == 0 then --unbreakable block
