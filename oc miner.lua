@@ -435,7 +435,7 @@ dump = function(available) --available is table
     for slot = 1, inventory do -- check inventory
         local item = controller.getStackInInternalSlot(slot) -- get item info
         if item then -- if item exists
-            local name = item.name:gsub("%g+:", "")
+            local name = item.name:gsub("%g+:", "") --might need to also check item.label
             if fodder[name] then -- check for a match on the trash list
                 currentSlot = robot.select(slot) -- select slot
                 robot.drop(0) -- drop to trash
