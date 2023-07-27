@@ -178,8 +178,11 @@ end
 step = function(side, ignore) -- function of moving by 1 block
     local swung, obstacle = swing(side)
     if not swung then -- if block is indestructible/unbreakable
-        local detected, whatsDetected = robot.detect(side) --might be unnecessary
-        if whatsDetected == "solid" then 
+        local detected, whatsDetected = nil, obstacle
+        if whatsDetected == "air" then
+            detected, whatsDetected = robot.detect(side) --might be unnecessary
+        end
+        if whatsDetected == "solid" or whatsDetected == "block" then 
             if side == 0 then --unbreakable block
                 border = Y --new boundary
             end
