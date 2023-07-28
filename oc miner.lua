@@ -393,7 +393,7 @@ calibration = function()
         robot.place(3) -- place block
         swing(3) -- mine block
     end
-    W_R = robotEnergy - robot.durability() -- write wear rate
+    W_R = robotEnergy and robotEnergy - robot.durability() -- write wear rate
     if tool.Energy or tool.energy then
         controller.equip() --unequip
         tool = controller.getStackInInternalSlot(currentSlot) --read change
