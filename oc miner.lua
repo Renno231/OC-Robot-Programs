@@ -115,7 +115,7 @@ check = function(forcibly) -- tool and battery check, points remove
         if should.durCheck then
             should.durCheck = false
             local toolDurability, toolDesc = robot.durability()
-            if (tool.Energy and tool.Energy < delta * toolEnergyDelta) or (toolDurability and toolDurability / W_R < delta) then -- if tool is worn
+            if (tool.Energy and (tool.Energy - toolEnergyDelta * blocksMined) < delta * toolEnergyDelta) or (toolDurability and toolDurability / W_R < delta) then -- if tool is worn
                 --todo: fix after storing tool information
                 report("Tool is worn")
                 ignore_check = true
