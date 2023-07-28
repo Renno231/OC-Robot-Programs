@@ -389,11 +389,11 @@ calibration = function()
     moveTo(0,-1,0) -- сделать шаг
     E_C = math.ceil(robotEnergy - computer.energy()) -- write consumption level
     robotEnergy = robot.durability() -- get the wear/discharge rate of the tool
-    while robotEnergy == robot.durability() do -- while is no difference
+    while (originalToolEnergy and blocksMined < 1) or (robotEnergy and robotEnergy == robot.durability()) do -- while is no difference
         robot.place(3) -- place block
         swing(3) -- mine block
     end
-    W_R = robotEnergy - robot.durability() -- write result
+    W_R = robotEnergy - robot.durability() -- write wear rate
     if tool.Energy or tool.energy then
         controller.equip() --unequip
         tool = controller.getStackInInternalSlot(currentSlot) --read change
