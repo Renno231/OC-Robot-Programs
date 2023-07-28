@@ -342,8 +342,6 @@ calibration = function()
         report("geolyzer not detected", true)
     elseif not robot.detect(0) then
         report("bottom solid block is not detected", true)
-    elseif not robot.durability() then
-        report("there is no suitable tool in the manipulator", true)
     end
     local clist = computer.getDeviceInfo()
     for i, j in pairs(clist) do
