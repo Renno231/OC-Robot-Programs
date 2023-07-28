@@ -8,6 +8,9 @@ local E_C, W_R = 0, 0 -- energy consumption per step and wear rate
 local posData = {0, 0, 0, [0] = 1} -- table to store chunk coordinates, should store this at the top of the script to access the current chunk entry
 local currentChunk, entryHeight = 1, -2
 local chunkEntries = {{0,entryHeight,0}} --entry coordinates for chunks
+local tool = nil
+local toolEnergyDelta = nil
+local blocksMined = 0
 
 local function arr2dict(tbl) -- converting a list into an associative array
     for i = #tbl, 1, -1 do
@@ -52,6 +55,7 @@ swing = function(side)
     if swung then 
         should.invCheck = true
         should.durCheck = true 
+        blocksMined = blocksMined + 1
     end
     return swung, obstacle
 end
@@ -110,7 +114,9 @@ check = function(forcibly) -- tool and battery check, points remove
         local delta = math.abs(X) + math.abs(Y) + math.abs(Z) + 64 -- get distance
         if should.durCheck then
             should.durCheck = false
-            if robot.durability() / W_R < delta then -- if tool is worn
+            local toolDurability, toolDesc = robot.durability()
+            if (tool.Energy and tool.Energy < delta * toolEnergyDelta) or (toolDurability and toolDurability / W_R < delta) then -- if tool is worn
+                --todo: fix after storing tool information
                 report("Tool is worn")
                 ignore_check = true
                 home(true) -- go home
@@ -372,15 +378,28 @@ calibration = function()
             break
         end
     end
-    local energy = computer.energy() -- check energy level
+    --do the tool check here
+    tool = controller.equip() and controller.getStackInInternalSlot(currentSlot) --get the current data of the equipped tool
+    if not tool then
+        finished = true
+        report("Tool not found.", true)
+    end
+    local originalToolEnergy = tool.Energy or tool.energy
+    local robotEnergy = computer.energy() -- check energy level
     moveTo(0,-1,0) -- сделать шаг
-    E_C = math.ceil(energy - computer.energy()) -- write consumption level
-    energy = robot.durability() -- get the wear/discharge rate of the tool
-    while energy == robot.durability() do -- while is no difference
+    E_C = math.ceil(robotEnergy - computer.energy()) -- write consumption level
+    robotEnergy = robot.durability() -- get the wear/discharge rate of the tool
+    while robotEnergy == robot.durability() do -- while is no difference
         robot.place(3) -- place block
         swing(3) -- mine block
     end
-    W_R = energy - robot.durability() -- write result
+    W_R = robotEnergy - robot.durability() -- write result
+    if tool.Energy or tool.energy then
+        controller.equip() --unequip
+        tool = controller.getStackInInternalSlot(currentSlot) --read change
+        toolEnergyDelta = ( originalToolEnergy - (tool.Energy or tool.energy) ) / blocksMined
+        controller.equip()
+    end
     local sides = {2, 1, 3, 0} -- link sides, for raw data
     D = nil -- direction reset
     for s = 1, #sides do -- check all directions
@@ -653,7 +672,7 @@ home = function(forcibly, interrupt) -- return to the starting point and drop th
                 currentSlot = robot.select(1) -- select 1 slot
                 controller.equip() -- unequip tool
                 repeat
-                    local tool = controller.getStackInInternalSlot(1) -- get tool info
+                    tool = controller.getStackInInternalSlot(1) -- get tool info
                     for slot = 1, size do
                         local item = controller.getStackInSlot(3, slot)
                         if item then
@@ -685,8 +704,8 @@ home = function(forcibly, interrupt) -- return to the starting point and drop th
         elseif toolDesc == 'tool cannot be damaged' then --try to charge tool
             currentSlot = robot.select(1) -- select slot
             controller.equip() -- unequip
-            local currentToolData = controller.getStackInInternalSlot(1)
-            local energy = currentToolData.Energy or currentToolData.energy or currentToolData.charge
+            tool = controller.getStackInInternalSlot(1)
+            local energy = tool.Energy or tool.energy or tool.charge
             if energy then
                 report("Attempting to recharge tool...")
                 for side = 1, 4 do -- check all sides
@@ -700,8 +719,8 @@ home = function(forcibly, interrupt) -- return to the starting point and drop th
                                 local stagnantCharge = 0 --the number of times it was equavlent to the last value when checked, 3 checks = 3 seconds of no change
                                 report("Waiting on tool recharge...")
                                 while stagnantCharge < 3 do
-                                    currentToolData = controller.getStackInSlot(3, 1) 
-                                    currentEnergy = currentToolData.Energy or currentToolData.energy or currentToolData.charge
+                                    tool = controller.getStackInSlot(3, 1) 
+                                    currentEnergy = tool.Energy or tool.energy or tool.charge
                                     if currentEnergy == energy then
                                         stagnantCharge = stagnantCharge + 1
                                     else --if it went up like it should
