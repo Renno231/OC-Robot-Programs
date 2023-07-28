@@ -10,7 +10,7 @@ local currentChunk, entryHeight = 1, -2
 local chunkEntries = {{0,entryHeight,0}} --entry coordinates for chunks
 local tool = nil
 local toolEnergyDelta = nil
-local blocksMined = 0
+local totalMined, currentMined = 0, 0
 
 local function arr2dict(tbl) -- converting a list into an associative array
     for i = #tbl, 1, -1 do
@@ -55,7 +55,8 @@ swing = function(side)
     if swung then 
         should.invCheck = true
         should.durCheck = true 
-        blocksMined = blocksMined + 1
+        totalMined = totalMined + 1
+        currentMined = currentMined + 1
     end
     return swung, obstacle
 end
@@ -115,7 +116,7 @@ check = function(forcibly) -- tool and battery check, points remove
         if should.durCheck then
             should.durCheck = false
             local toolDurability, toolDesc = robot.durability()
-            if (tool.Energy and (tool.Energy - toolEnergyDelta * blocksMined) < delta * toolEnergyDelta) or (toolDurability and toolDurability / W_R < delta) then -- if tool is worn
+            if (tool.Energy and (tool.Energy - toolEnergyDelta * currentMined) < delta * toolEnergyDelta) or (toolDurability and toolDurability / W_R < delta) then -- if tool is worn
                 --todo: fix after storing tool information
                 report("Tool is worn")
                 ignore_check = true
@@ -389,7 +390,7 @@ calibration = function()
     moveTo(0,-1,0) -- сделать шаг
     E_C = math.ceil(robotEnergy - computer.energy()) -- write consumption level
     robotEnergy = robot.durability() -- get the wear/discharge rate of the tool
-    while (originalToolEnergy and blocksMined < 1) or (robotEnergy and robotEnergy == robot.durability()) do -- while is no difference
+    while (originalToolEnergy and totalMined < 1) or (robotEnergy and robotEnergy == robot.durability()) do -- while is no difference
         robot.place(3) -- place block
         swing(3) -- mine block
     end
@@ -397,7 +398,7 @@ calibration = function()
     if tool.Energy or tool.energy then
         controller.equip() --unequip
         tool = controller.getStackInInternalSlot(currentSlot) --read change
-        toolEnergyDelta = ( originalToolEnergy - (tool.Energy or tool.energy) ) / blocksMined
+        toolEnergyDelta = ( originalToolEnergy - (tool.Energy or tool.energy) ) / totalMined
         controller.equip()
     end
     local sides = {2, 1, 3, 0} -- link sides, for raw data
@@ -730,7 +731,8 @@ home = function(forcibly, interrupt) -- return to the starting point and drop th
                                     if stagnantCharge == 3 then
                                         suck(3) -- get item
                                         controller.equip() -- equip
-                                        report("tool is charge is " .. math.floor(energy))
+                                        report("tool charge is " .. math.floor(energy))
+                                        currentMined = 0
                                     end
                                     sleep(1)
                                 end
@@ -742,6 +744,7 @@ home = function(forcibly, interrupt) -- return to the starting point and drop th
                                 sleep(1)
                             end
                         until insertedToCharger
+                        if insertedToCharger then break end
                     else
                         turn() -- rotate
                     end
