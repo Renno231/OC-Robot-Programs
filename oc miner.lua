@@ -382,6 +382,7 @@ calibration = function()
         finished = true
         report("Tool not found.", true)
     end
+    if tool then controller.equip() end
     local originalToolEnergy = tool.Energy or tool.energy
     local robotEnergy = computer.energy() -- check energy level
     moveTo(0,-1,0) -- сделать шаг
