@@ -64,6 +64,8 @@ suck = function(side)
     return sucked
 end
 
+--need to add one for drop
+
 energy_level = function()
     return computer.energy() / computer.maxEnergy()
 end
@@ -577,11 +579,12 @@ home = function(forcibly, interrupt) -- return to the starting point and drop th
         moveTo(0,0,0)
     end
     --sorter() -- inventory slot
-    local size = nil -- reset container size
+    local size, containerDirection --container size
     while true do -- go to endless loop
         for side = 1, 4 do -- container search
             size = controller.getInventorySize(3) -- get inventory size
             if size and size > 26 then -- if container found
+                containerDirection = D
                 break -- stop search
             end
             turn() -- rotate
@@ -642,67 +645,134 @@ home = function(forcibly, interrupt) -- return to the starting point and drop th
     if forcibly then
         report("Tool search in container")
         local toolDurability, toolDesc = robot.durability() --fix later
-        if robot.durability() < 0.3 then -- if the strength of the tool is less than 30%
-            currentSlot = robot.select(1) -- select 1 slot
-            controller.equip() -- move tool to inventory
-            local tool = controller.getStackInInternalSlot(1) -- get tool info
-            for slot = 1, size do
-                local item = controller.getStackInSlot(3, slot)
-                if item then
-                    if item.name == tool.name and item.damage < tool.damage then
-                        robot.drop(3)
-                        controller.suckFromSlot(3, slot)
-                        break
-                    end
-                end
-            end
-            controller.equip() -- equip
-        end
-        if robot.durability() < 0.3 then -- if the instrument has not been replaced by a better one
-            report("Attempting to repair tool...")
-            for side = 1, 3 do -- check all sides
-                local name = controller.getInventoryName(3) -- gei invenory name
-                if name == "opencomputers:charger" or name == "tile.oc.charger" then -- check name
-                    currentSlot = robot.select(1) -- select slot
-                    controller.equip() -- equip
-                    if robot.drop(3) then -- if can get the tool into the charger
-                        local charge = controller.getStackInSlot(3, 1).charge
-                        local max_charge = controller.getStackInSlot(3, 1).maxCharge
-                        while true do
-                            sleep(30)
-                            local n_charge = controller.getStackInSlot(3, 1).charge -- get charge info
-                            if charge then
-                                if n_charge == max_charge then
-                                    suck(3) -- get item
-                                    controller.equip() -- equip
-                                    break -- stop charging
-                                else
-                                    report("tool is " .. math.floor((n_charge + 1) / max_charge * 100) .. "% charged")
-                                end
-                            else -- if the tool is not repairable
-                                report("tool could not be charged", true) -- stop
+        if toolDurability then -- if the strength of the tool is less than 30%
+            if toolDurability < 0.3 then
+                report("Tool durability low, replacement required.")
+                local hasReportedDurability, hasReportedMissingTool = false, false
+                local swapped = false
+                currentSlot = robot.select(1) -- select 1 slot
+                controller.equip() -- unequip tool
+                repeat
+                    local tool = controller.getStackInInternalSlot(1) -- get tool info
+                    for slot = 1, size do
+                        local item = controller.getStackInSlot(3, slot)
+                        if item then
+                            if item.name == tool.name and ((item.Energy and tool.Energy and item.Energy > tool.Energy) or item.damage < tool.damage) then
+                                robot.drop(3)
+                                controller.suckFromSlot(3, slot)
+                                swapped = true
+                                break
                             end
                         end
-                    else
-                        report("tool could not be repaired", true) -- stop
                     end
-                else
-                    turn() -- rotate
+                    if swapped then
+                        controller.equip() -- equip
+                        toolDurability, toolDesc = robot.durability()
+                        if toolDurability and toolDurability < 0.3 then
+                            if not hasReportedDurability then
+                                report("Ineligable replacement found. Tool durability low, replacement required.")
+                                hasReportedDurability = true
+                            end
+                            swapped = false 
+                            controller.equip() --unequip bad tool
+                            sleep(1)
+                        end
+                    else --no eligable replacement found
+                        sleep(2)
+                    end
+                until swapped
+            end
+        elseif toolDesc == 'tool cannot be damaged' then --try to charge tool
+            currentSlot = robot.select(1) -- select slot
+            controller.equip() -- unequip
+            local currentToolData = controller.getStackInInternalSlot(1)
+            local energy = currentToolData.Energy or currentToolData.energy or currentToolData.charge
+            if energy then
+                report("Attempting to recharge tool...")
+                for side = 1, 4 do -- check all sides
+                    local name = controller.getInventoryName(3) -- gei invenory name
+                    if name == "opencomputers:charger" or name == "tile.oc.charger" then -- find charger
+                        report("Found charger.")
+                        local hasReportedChargerFailure, insertedToCharger 
+                        repeat --repeat until success or sleep
+                            insertedToCharger = robot.drop(3)
+                            if insertedToCharger then -- if can get the tool into the charger
+                                local stagnantCharge = 0 --the number of times it was equavlent to the last value when checked, 3 checks = 3 seconds of no change
+                                report("Waiting on tool recharge...")
+                                while stagnantCharge < 3 do
+                                    currentToolData = controller.getStackInSlot(3, 1) 
+                                    currentEnergy = currentToolData.Energy or currentToolData.energy or currentToolData.charge
+                                    if currentEnergy == energy then
+                                        stagnantCharge = stagnantCharge + 1
+                                    else --if it went up like it should
+                                        energy = currentEnergy
+                                        stagnantCharge = 0 --reset the number of checks
+                                    end
+                                    if stagnantCharge == 3 then
+                                        suck(3) -- get item
+                                        controller.equip() -- equip
+                                        report("tool is charge is " .. math.floor(energy))
+                                    end
+                                    sleep(1)
+                                end
+                            else
+                                if not hasReportedChargerFailure then
+                                    report("tool could not inserted into charger") -- stop
+                                    hasReportedChargerFailure = true
+                                end
+                                sleep(1)
+                            end
+                        until insertedToCharger
+                    else
+                        turn() -- rotate
+                    end
                 end
             end
-            while robot.durability() < 0.3 do
-                report("need a new tool")
-                sleep(30)
-            end
-        end
+        end 
     end
     if enderchest and not forcibly then
         swing(3) -- get chest
     else
-        while energy_level() < 0.98 do -- wait until battery is full
-            report("charging")
-            sleep(30)
+        --add a way to check for generator upgrade and use coal from the chest if any
+        local energyLvl = energy_level()
+        if energyLvl < 0.98 then
+            report("Charging")
         end
+        local fuelAvailable = true
+        while energy_level() < 0.98 do -- wait until battery is full
+            if generator and generator.count() == 0 and fuelAvailable then -- if generator installed, try to fuel it
+                report("Refueling solid fuel generator.") --this isn't the smartest way of doing it and doesn't preserve fuel
+                local fueled = false
+                for slot = 1, inventory do -- check inventory
+                    currentSlot = robot.select(slot) -- select slot
+                    --for gen in component.list("generator") do -- check all generators
+                        fueled = generator.insert() -- component.proxy(gen).insert()
+                        if fueled then -- try to refuel
+                            break
+                        end
+                    --end
+                end
+                if not fueled then
+                    smart_turn(containerDirection)
+                    fuelAvailable = false
+                    for slot = 1, size do -- scan container
+                        local item = controller.getStackInSlot(3, slot) -- get item info
+                        if item and item.label:lower():match"coal" then -- if item is coal
+                            fuelAvailable = controller.suckFromSlot(3, slot) -- get
+                            break
+                        end
+                    end
+                end
+                sleep(15)
+            else
+                sleep(30)
+            end
+        end
+        if generator and generator.count() > 0 then
+            generator.remove(generator.count())
+        end
+        should.invCheck = true --override
+        sorter()
     end
     ignore_check = nil
     if not interrupt then --return to previous
