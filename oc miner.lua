@@ -446,7 +446,7 @@ inv_check = function()
             end
         end
         --while suck(1) do end --why?
-        if inventory - items < 10 or items / inventory > 0.9 then
+        if inventory - items < 5 or items / inventory > 0.9 then
             home(true)
         end
     end
@@ -732,7 +732,7 @@ home = function(forcibly, interrupt) -- return to the starting point and drop th
                                         suck(3) -- get item
                                         controller.equip() -- equip
                                         report("tool charge is " .. math.floor(energy))
-                                        currentMined = 0
+                                        currentMined = 0 -- doesn't necessarily have to be here, but it is necessary
                                     end
                                     sleep(1)
                                 end
